@@ -277,6 +277,14 @@ async function buildContainerArgs(
       { containerName },
       'OneCLI gateway not reachable — container will have no credentials',
     );
+    // Fall back to passing Anthropic credentials directly from the pod env.
+    // This supports LiteLLM or other proxies configured via ANTHROPIC_BASE_URL.
+    if (process.env.ANTHROPIC_API_KEY) {
+      args.push('-e', `ANTHROPIC_API_KEY=${process.env.ANTHROPIC_API_KEY}`);
+    }
+    if (process.env.ANTHROPIC_BASE_URL) {
+      args.push('-e', `ANTHROPIC_BASE_URL=${process.env.ANTHROPIC_BASE_URL}`);
+    }
   }
 
   // Runtime-specific args for host gateway resolution
