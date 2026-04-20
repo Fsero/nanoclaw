@@ -31,6 +31,7 @@ COPY --from=builder /app/dist ./dist
 COPY container/ ./container/
 COPY setup/ ./setup/
 COPY groups/ ./groups/
+COPY scripts/ ./scripts/
 
 RUN mkdir -p store data logs \
     && chown -R node:node /app
