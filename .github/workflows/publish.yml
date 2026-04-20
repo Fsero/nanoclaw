@@ -51,3 +51,27 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Extract agent metadata
+        id: agent-meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/nanoclaw-agent
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value={{date 'YYYYMMDD'}}-{{sha}},enable={{is_default_branch}}
+          flavor: |
+            latest=auto
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+        env:
+          DOCKER_METADATA_SHORT_SHA_LENGTH: 6
+
+      - name: Build and push agent
+        uses: docker/build-push-action@v6
+        with:
+          context: ./container
+          push: true
+          tags: ${{ steps.agent-meta.outputs.tags }}
+          labels: ${{ steps.agent-meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
