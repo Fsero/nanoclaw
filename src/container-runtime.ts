@@ -12,6 +12,13 @@ export const CONTAINER_RUNTIME_BIN = 'docker';
 
 /** CLI args needed for the container to resolve the host gateway. */
 export function hostGatewayArgs(): string[] {
+  // When running inside dind (Docker-in-Docker), agent containers must use
+  // --network host to inherit the dind container's network namespace, which
+  // has k8s routing (ClusterIPs, etc.). host.docker.internal is not needed
+  // in this mode since ANTHROPIC_BASE_URL should use the ClusterIP directly.
+  if (process.env.AGENT_NETWORK_HOST === 'true') {
+    return ['--network', 'host'];
+  }
   // On Linux, host.docker.internal isn't built-in — add it explicitly
   if (os.platform() === 'linux') {
     return ['--add-host=host.docker.internal:host-gateway'];
@@ -76,10 +83,7 @@ export async function ensureContainerRuntimeRunning(): Promise<void> {
         );
         throw new Error('Container runtime is required but failed to start');
       }
-      logger.info(
-        { attempt, maxAttempts },
-        'Waiting for container runtime...',
-      );
+      logger.info({ attempt, maxAttempts }, 'Waiting for container runtime...');
       await new Promise((resolve) => setTimeout(resolve, delayMs));
     }
   }
