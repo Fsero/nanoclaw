@@ -405,9 +405,8 @@ async function runQuery(
   closedDuringQuery: boolean;
 }> {
   const stream = new MessageStream();
-  stream.push(prompt);
-
-  // Load image attachments and send as multimodal content blocks
+  // Build initial user message — combine text + images into a single turn
+  // so the model receives both in the same context rather than as separate messages.
   if (containerInput.imageAttachments?.length) {
     const blocks: ContentBlock[] = [];
     for (const img of containerInput.imageAttachments) {
@@ -420,8 +419,13 @@ async function runQuery(
       }
     }
     if (blocks.length > 0) {
+      blocks.push({ type: 'text', text: prompt });
       stream.pushMultimodal(blocks);
+    } else {
+      stream.push(prompt);
     }
+  } else {
+    stream.push(prompt);
   }
 
   // Poll IPC for follow-up messages and _close sentinel during the query
