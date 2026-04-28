@@ -430,11 +430,14 @@ function buildMultimodalBlocks(
   }
 
   if (blocks.length === 0) return null;
-  // Prepend transcription instruction when images are present, so the model
-  // always extracts text regardless of what the user wrote.
-  const imageInstruction =
-    'First, transcribe all visible text in the image(s) exactly as written, preserving the original language. Then answer any question the user asked, or summarize the content if no question was given.\n\n';
-  blocks.push({ type: 'text', text: imageInstruction + text });
+  // Force transcription when images are present. gemma4 ignores soft instructions
+  // so we make this the explicit task in the user message itself.
+  const bareImageRef = text.trim().replace(IMAGE_REF_RE, '').trim();
+  const userQuestion = bareImageRef || '';
+  const imageInstruction = userQuestion
+    ? `Transcribe word for word all text visible in the image, keeping the original language exactly as written. Then: ${userQuestion}`
+    : 'Transcribe word for word all text visible in the image, keeping the original language exactly as written.';
+  blocks.push({ type: 'text', text: imageInstruction });
   return blocks;
 }
 
