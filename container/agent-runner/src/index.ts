@@ -386,6 +386,54 @@ function waitForIpcMessage(): Promise<string | null> {
   });
 }
 
+const IMAGE_REF_RE = /\[Image: (attachments\/[^\]]+)\]/g;
+
+/**
+ * Build a multimodal ContentBlock array from text (and optional explicit attachments).
+ * Parses [Image: attachments/...] refs embedded in text, loads them as base64.
+ * Returns null if no images found (caller should use plain stream.push instead).
+ */
+function buildMultimodalBlocks(
+  text: string,
+  attachments?: Array<{ relativePath: string; mediaType: string }>,
+): ContentBlock[] | null {
+  const blocks: ContentBlock[] = [];
+
+  // Explicit attachments from ContainerInput (initial message)
+  if (attachments?.length) {
+    for (const img of attachments) {
+      const imgPath = path.join('/workspace/group', img.relativePath);
+      try {
+        const data = fs.readFileSync(imgPath).toString('base64');
+        blocks.push({ type: 'image', source: { type: 'base64', media_type: img.mediaType as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp', data } });
+      } catch {
+        log(`Failed to load image: ${imgPath}`);
+      }
+    }
+  }
+
+  // Parse [Image: attachments/...] refs embedded in text (IPC messages)
+  IMAGE_REF_RE.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  const seenPaths = new Set(attachments?.map((a) => a.relativePath) ?? []);
+  while ((match = IMAGE_REF_RE.exec(text)) !== null) {
+    const relativePath = match[1];
+    if (seenPaths.has(relativePath)) continue;
+    seenPaths.add(relativePath);
+    const imgPath = path.join('/workspace/group', relativePath);
+    try {
+      const data = fs.readFileSync(imgPath).toString('base64');
+      blocks.push({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data } });
+    } catch {
+      log(`Failed to load image from text ref: ${imgPath}`);
+    }
+  }
+
+  if (blocks.length === 0) return null;
+  blocks.push({ type: 'text', text });
+  return blocks;
+}
+
 /**
  * Run a single query and stream results via writeOutput.
  * Uses MessageStream (AsyncIterable) to keep isSingleUserTurn=false,
@@ -406,24 +454,9 @@ async function runQuery(
 }> {
   const stream = new MessageStream();
   // Build initial user message — combine text + images into a single turn
-  // so the model receives both in the same context rather than as separate messages.
-  if (containerInput.imageAttachments?.length) {
-    const blocks: ContentBlock[] = [];
-    for (const img of containerInput.imageAttachments) {
-      const imgPath = path.join('/workspace/group', img.relativePath);
-      try {
-        const data = fs.readFileSync(imgPath).toString('base64');
-        blocks.push({ type: 'image', source: { type: 'base64', media_type: img.mediaType as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp', data } });
-      } catch (err) {
-        log(`Failed to load image: ${imgPath}`);
-      }
-    }
-    if (blocks.length > 0) {
-      blocks.push({ type: 'text', text: prompt });
-      stream.pushMultimodal(blocks);
-    } else {
-      stream.push(prompt);
-    }
+  const initialBlocks = buildMultimodalBlocks(prompt, containerInput.imageAttachments);
+  if (initialBlocks) {
+    stream.pushMultimodal(initialBlocks);
   } else {
     stream.push(prompt);
   }
@@ -443,7 +476,12 @@ async function runQuery(
     const messages = drainIpcInput();
     for (const text of messages) {
       log(`Piping IPC message into active query (${text.length} chars)`);
-      stream.push(text);
+      const ipcBlocks = buildMultimodalBlocks(text);
+      if (ipcBlocks) {
+        stream.pushMultimodal(ipcBlocks);
+      } else {
+        stream.push(text);
+      }
     }
     setTimeout(pollIpcDuringQuery, IPC_POLL_MS);
   };
