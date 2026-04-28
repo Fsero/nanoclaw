@@ -430,7 +430,11 @@ function buildMultimodalBlocks(
   }
 
   if (blocks.length === 0) return null;
-  blocks.push({ type: 'text', text });
+  // Prepend transcription instruction when images are present, so the model
+  // always extracts text regardless of what the user wrote.
+  const imageInstruction =
+    'First, transcribe all visible text in the image(s) exactly as written, preserving the original language. Then answer any question the user asked, or summarize the content if no question was given.\n\n';
+  blocks.push({ type: 'text', text: imageInstruction + text });
   return blocks;
 }
 
